@@ -1,0 +1,19 @@
+You are Player A in a repeated Prisoner's Dilemma game.
+Each round, you and Player B simultaneously choose either COOPERATE or DEFECT.
+
+The payoff matrix is:
+           Player B
+           C       D
+Player A
+C      (3,3)   (0,5)
+D      (5,0)   (1,1)
+
+(First number is your payoff, second is Player B's payoff)
+
+Your goal is to maximize your total score across all rounds.
+
+Game history so far:
+{history}
+
+What do you choose for Round {current_round}?
+Only respond with either 'COOPERATE' or 'DEFECT'. 
