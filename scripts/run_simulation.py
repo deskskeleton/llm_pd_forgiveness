@@ -13,17 +13,23 @@ from anthropic import Anthropic, RateLimitError
 import google.generativeai as genai
 from dotenv import load_dotenv
 import random
+import argparse
 
 # Load environment variables
 load_dotenv()
 
-# Get the absolute path to the script directory
+# Get absolute paths regardless of where script is called from
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Get the project root directory (parent of scripts directory)
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-PROMPT_TEMPLATE_PATH = os.path.join(SCRIPT_DIR, 'prompt_templates', 'base_prompt.txt')
-RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results')
-LOGS_DIR = os.path.join(PROJECT_ROOT, 'logs')
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)  # Parent of scripts directory
+
+# Ensure all paths are absolute and within project directory
+PROMPT_TEMPLATE_PATH = os.path.abspath(os.path.join(PROJECT_ROOT, 'scripts', 'prompt_templates', 'base_prompt.txt'))
+RESULTS_DIR = os.path.abspath(os.path.join(PROJECT_ROOT, 'results'))
+LOGS_DIR = os.path.abspath(os.path.join(PROJECT_ROOT, 'logs'))
+
+# Verify paths are within project directory
+if not all(p.startswith(PROJECT_ROOT) for p in [PROMPT_TEMPLATE_PATH, RESULTS_DIR, LOGS_DIR]):
+    raise ValueError("All paths must be within the project directory")
 
 # Configure logging with more detailed format
 logging.basicConfig(
@@ -332,52 +338,123 @@ class PrisonersDilemmaGame:
 
 def main():
     """Run the simulation."""
-    # Ensure output directories exist
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    os.makedirs(os.path.join(RESULTS_DIR, 'full_runs'), exist_ok=True)
-    os.makedirs(os.path.join(RESULTS_DIR, 'test_runs'), exist_ok=True)
-    os.makedirs(LOGS_DIR, exist_ok=True)
+    # Add argument parsing
+    parser = argparse.ArgumentParser(description='Run Prisoner\'s Dilemma simulation')
+    parser.add_argument('--sessions', type=int, default=1,
+                       help='Number of simulation sessions to run (default: 1)')
+    args = parser.parse_args()
     
-    # Configure file logging
-    file_handler = logging.FileHandler(
-        os.path.join(LOGS_DIR, f'simulation_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
-    )
-    file_handler.setFormatter(
-        logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    )
-    logger.addHandler(file_handler)
-    
-    # Models to test
-    models = [
-        'gpt-4',
-        'gpt-3.5-turbo',
-        'claude-3-opus-20240229',
-        'gemini-1.5-pro'  # Updated to use the correct model name
-    ]
-    
-    # Run games
-    for model in models:
-        try:
-            logger.info(f"Starting game with model: {model}")
+    try:
+        # Create timestamped results directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_dir = os.path.join(RESULTS_DIR, f"simulation_{args.sessions}sessions_{timestamp}")
+        
+        # Create directory structure
+        os.makedirs(session_dir, exist_ok=True)
+        os.makedirs(os.path.join(session_dir, 'logs'), exist_ok=True)
+        os.makedirs(os.path.join(session_dir, 'results'), exist_ok=True)
+        
+        # Configure session-specific logging
+        log_file = os.path.join(session_dir, 'logs', 'simulation.log')
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(
+            logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        )
+        logger.addHandler(file_handler)
+        
+        # Log session start
+        logger.info(f"Starting simulation with {args.sessions} sessions")
+        logger.info(f"Results will be saved in: {session_dir}")
+        
+        # Models to test
+        models = [
+            'gpt-4',
+            'gpt-3.5-turbo',
+            'claude-3-opus-20240229',
+            'gemini-1.5-pro'
+        ]
+        
+        # Create session summary file
+        summary_file = os.path.join(session_dir, 'session_summary.json')
+        summary_data = {
+            'total_sessions': args.sessions,
+            'timestamp': timestamp,
+            'models_tested': models,
+            'sessions': []
+        }
+        
+        # Run sessions
+        for session in range(args.sessions):
+            session_num = session + 1
+            logger.info(f"Starting session {session_num}/{args.sessions}")
             
-            game = PrisonersDilemmaGame(model_name=model)
-            results = game.run_game()
+            session_results = {
+                'session_number': session_num,
+                'timestamp': datetime.now().isoformat(),
+                'games': []
+            }
             
-            # Save results
-            output_file = os.path.join(RESULTS_DIR, 'full_runs', f'game_{results["run_id"]}.json')
-            with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2)
-            logger.info(f"Results saved to {output_file}")
+            # Run games for each model
+            for model in models:
+                try:
+                    logger.info(f"Session {session_num}, starting game with model: {model}")
+                    
+                    game = PrisonersDilemmaGame(model_name=model)
+                    results = game.run_game()
+                    
+                    # Add session information to results
+                    results['session'] = session_num
+                    results['total_sessions'] = args.sessions
+                    
+                    # Save individual game results
+                    game_file = os.path.join(
+                        session_dir, 
+                        'results', 
+                        f'session_{session_num}_model_{model}_{results["run_id"]}.json'
+                    )
+                    with open(game_file, 'w') as f:
+                        json.dump(results, f, indent=2)
+                    
+                    # Add to session results
+                    session_results['games'].append({
+                        'model': model,
+                        'run_id': results['run_id'],
+                        'total_score': results['total_score'],
+                        'cooperation_rate': results['cooperation_rate']
+                    })
+                    
+                    logger.info(f"Results saved to {game_file}")
+                    
+                    # Add delay between models to avoid rate limits
+                    if model != models[-1] or session != args.sessions - 1:
+                        wait_time = 30  # 30 seconds between models
+                        logger.info(f"Waiting {wait_time} seconds before next model...")
+                        time.sleep(wait_time)
+                    
+                except Exception as e:
+                    error_msg = f"Error running game with {model} in session {session_num}: {str(e)}"
+                    logger.error(error_msg)
+                    session_results['games'].append({
+                        'model': model,
+                        'error': error_msg
+                    })
+                    continue
             
-            # Add delay between models to avoid rate limits
-            if model != models[-1]:  # Don't wait after the last model
-                wait_time = 30  # 30 seconds between models
-                logger.info(f"Waiting {wait_time} seconds before starting next model...")
-                time.sleep(wait_time)
+            # Add session results to summary
+            summary_data['sessions'].append(session_results)
             
-        except Exception as e:
-            logger.error(f"Error running game with {model}: {str(e)}")
-            continue
+            # Update summary file after each session
+            with open(summary_file, 'w') as f:
+                json.dump(summary_data, f, indent=2)
+            
+            logger.info(f"Completed session {session_num}/{args.sessions}")
+        
+        logger.info("All sessions completed successfully")
+        logger.info(f"Results are available in: {session_dir}")
+        
+    except Exception as e:
+        logger.error(f"Fatal error in main: {str(e)}")
+        raise
 
 if __name__ == '__main__':
     main() 
