@@ -19,7 +19,11 @@ load_dotenv()
 
 # Get the absolute path to the script directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Get the project root directory (parent of scripts directory)
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 PROMPT_TEMPLATE_PATH = os.path.join(SCRIPT_DIR, 'prompt_templates', 'base_prompt.txt')
+RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results')
+LOGS_DIR = os.path.join(PROJECT_ROOT, 'logs')
 
 # Configure logging with more detailed format
 logging.basicConfig(
@@ -329,12 +333,14 @@ class PrisonersDilemmaGame:
 def main():
     """Run the simulation."""
     # Ensure output directories exist
-    os.makedirs('results', exist_ok=True)
-    os.makedirs('logs', exist_ok=True)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    os.makedirs(os.path.join(RESULTS_DIR, 'full_runs'), exist_ok=True)
+    os.makedirs(os.path.join(RESULTS_DIR, 'test_runs'), exist_ok=True)
+    os.makedirs(LOGS_DIR, exist_ok=True)
     
     # Configure file logging
     file_handler = logging.FileHandler(
-        f'logs/simulation_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+        os.path.join(LOGS_DIR, f'simulation_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
     )
     file_handler.setFormatter(
         logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -358,7 +364,7 @@ def main():
             results = game.run_game()
             
             # Save results
-            output_file = f'results/game_{results["run_id"]}.json'
+            output_file = os.path.join(RESULTS_DIR, 'full_runs', f'game_{results["run_id"]}.json')
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2)
             logger.info(f"Results saved to {output_file}")
